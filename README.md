@@ -9,6 +9,7 @@ Prosjektet er utviklet med fokus på lavt strømforbruk og stabil drift over lan
 - [Funksjonalitet](#funksjonalitet)
 - [Maskinvare](#maskinvare)
 - [Oppsett og opplasting](#oppsett-og-opplasting)
+- [Konfigurasjon med secrets.h](#konfigurasjon-med-secretsh)
 - [Backend-integrasjon](#backend-integrasjon)
 - [Programstruktur og dokumentasjon](#programstruktur-og-dokumentasjon)
 - [Forslag til utvidelser](#forslag-til-utvidelser)
@@ -52,10 +53,48 @@ Prosjektet er utviklet med fokus på lavt strømforbruk og stabil drift over lan
    - `Adafruit Unified Sensor`
    - `WiFi.h` (standard i ESP32)
    - `HTTPClient.h` (standard i ESP32)
-   - `cppQueue` (installer Queue av SMFSW i ESP32)
+   - `cppQueue` (installer manuelt fra https://github.com/SMFSW/cppQueue)
 4. Koble til ESP32
 5. Velg riktig port og board (`ESP32 Dev Module`)
 6. Kompiler og last opp programmet
+
+---
+
+## Konfigurasjon med secrets.h
+
+Sensitive data som WiFi-passord og API-nøkler holdes utenfor kildekoden ved å bruke en egen headerfil kalt `secrets.h`.
+
+Denne fila er **ikke lastet opp til GitHub**, men det følger med en mal (`secrets_example.h`) som du kan bruke.
+
+### 1. Kopier fila
+
+Lag en kopi av `secrets_example.h` og gi den navnet `secrets.h`:
+
+```sh
+cp secrets_example.h secrets.h
+```
+
+### 2. Fyll inn dine verdier
+
+Åpne `secrets.h` og fyll inn dine egne innstillinger:
+
+```cpp
+#pragma once
+
+// WiFi
+const char* ssid = "MittNettverk";
+const char* password = "MittPassord";
+
+// Backend
+const char* serverUrl = "https://din-backend-url.no/api/sensor-data/";
+const char* espId = "esp32-a1b2c3";
+const char* apiKey = "hemmelig-api-nokkel";
+const char* location = "Sandnes";
+```
+
+### 3. Ikke last opp secrets.h
+
+`secrets.h` er lagt til i `.gitignore` og vil aldri lastes opp til GitHub. På denne måten kan prosjektet deles trygt uten at sensitiv informasjon eksponeres.
 
 ---
 
@@ -69,7 +108,7 @@ Eksempel på JSON som sendes:
 
 ```json
 {
-  "esp_id": "din-esp-id",
+  "esp_id": "unik-valgt-esp-id",
   "location": "Sandnes",
   "temperature": 21.5,
   "humidity": 42.3,
