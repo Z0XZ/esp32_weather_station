@@ -102,7 +102,7 @@ const char* location = "Sandnes";
 
 Dette prosjektet sender data til en Django REST API. Du finner backend-repoet her:
 
-➡️ [lenke til backend-repo eller URL til API]
+➡️ [Weather-API](https://github.com/Z0XZ/weather-api)
 
 Eksempel på JSON som sendes:
 
