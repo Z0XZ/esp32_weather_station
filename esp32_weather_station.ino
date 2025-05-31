@@ -13,8 +13,9 @@
 #define SDA_PIN 21
 #define SCL_PIN 22
 #define WIND_SENSOR_PIN 4
-#define ROTOR_RADIUS 0.1  // meter – juster etter din rotordiameter
+#define ROTOR_RADIUS 0.12  // meter – juster etter din rotordiameter
 #define CALIBRATION_FACTOR_WIND 1.3  // juster basert på kalibrering
+#define MAX_LENGTH 20 // Lengde av kø for vinddata
 
 // Dvale
 #define uS_TO_S_FACTOR 1000000ULL
@@ -23,11 +24,7 @@
 // Sensorer
 Adafruit_BME280 bme;
 
-// cppQueue for vindmåling
-#define MAX_LENGTH 20
-cppQueue timeStamps(sizeof(int), MAX_LENGTH, FIFO, true); // Overwrite=true
-int lastWindVal = 1;
-float windFreq = 0;
+
 
 void setup() {
   Serial.begin(9600);
@@ -106,31 +103,49 @@ float readBatteryVoltage() {
 }
 
 float measureWind() {
+  const unsigned long duration_ms = 10000; // måletid: 10 sekunder
+  unsigned long startTime = millis();
+
   int val = 0;
-  int samples = 100;  // ~100 ms
-  for (int i = 0; i < samples; i++) {
+  int pulseCount = 0;
+
+  cppQueue timeStamps(sizeof(int), MAX_LENGTH, FIFO, true); // Overwrite=true
+  int lastWindVal = 1;
+  timeStamps.flush(); // tøm tidligere målinger
+
+  while (millis() - startTime < duration_ms) {
     val = digitalRead(WIND_SENSOR_PIN);
     if (val == 0 && lastWindVal == 1) {
       int timeStamp = millis();
+      pulseCount++;
+
       if (!timeStamps.isFull()) {
         timeStamps.push(&timeStamp);
       } else {
         int oldest;
         timeStamps.pop(&oldest);
         timeStamps.push(&timeStamp);
-
-        int first, last;
-        timeStamps.peekIdx(&first, 0);
-        timeStamps.peekIdx(&last, MAX_LENGTH - 1);
-        int deltaTime = last - first;
-        if (deltaTime > 0) {
-          windFreq = (MAX_LENGTH - 1) * 1000.0 / (deltaTime * 2);  // 2 magneter
-        }
       }
     }
     lastWindVal = val;
-    delay(1);  // gir ca. 100 ms totalt
+    delay(1);
   }
+
+  if (timeStamps.nbRecs() < 2) {
+    return 0.0; // ikke nok data til å beregne frekvens
+  }
+
+  int first, last;
+  timeStamps.peekIdx(&first, 0);
+  timeStamps.peekIdx(&last, timeStamps.nbRecs() - 1);
+
+  int deltaTime = last - first;
+  if (deltaTime <= 0) {
+    return 0.0;
+  }
+
+  // Beregn frekvens (Hz) basert på antall pulser og tid
+  float windFreq = (timeStamps.nbRecs() - 1) * 1000.0 / (deltaTime * 2);  // 2 magneter
   return windFreq;
 }
 
