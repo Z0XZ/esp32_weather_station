@@ -14,7 +14,7 @@
 #define SCL_PIN 22
 #define WIND_SENSOR_PIN 4
 #define ROTOR_RADIUS 0.12  // meter – juster etter din rotordiameter
-#define CALIBRATION_FACTOR_WIND 1.3  // juster basert på kalibrering
+#define CALIBRATION_FACTOR_WIND 2  // juster basert på kalibrering
 #define MAX_LENGTH 20 // Lengde av kø for vinddata
 
 // Dvale
