@@ -1,28 +1,31 @@
-#include <Wire.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
-#include <cppQueue.h>
-#include "secrets.h"
+// === Biblioteker for sensorer, nettverk og køhåndtering ===
+#include <Wire.h>                  // I2C-kommunikasjon
+#include <WiFi.h>                  // WiFi-tilkobling
+#include <HTTPClient.h>            // HTTP POST til backend
+#include <Adafruit_Sensor.h>       // Adafruit baseklasse for sensorer
+#include <Adafruit_BME280.h>       // Bibliotek for BME280-sensoren
+#include <cppQueue.h>              // FIFO-kø til vindmålinger
+#include "secrets.h"               // Inneholder blant annet WiFi og API-nøkler
 
-#define BATTERY_ADC_PIN 35
-#define BATTERY_GND_CTRL_PIN 32
-#define SEALEVELPRESSURE_HPA (1013.25)
-#define LIGHT_SENSOR_PIN 36
-#define SDA_PIN 21
-#define SCL_PIN 22
-#define WIND_SENSOR_PIN 4
-#define ROTOR_RADIUS 0.12  // meter – juster etter din rotordiameter
-#define CALIBRATION_FACTOR_WIND 2  // juster basert på kalibrering
-#define MAX_LENGTH 20 // Lengde av kø for vinddata
+// === Definisjoner av tilkoblinger og konstanter ===
+#define BATTERY_ADC_PIN 35         // Analog inngang for batterispenning
+#define BATTERY_GND_CTRL_PIN 32    // Kontrollerer "jord" til spenningsdeler
+#define LIGHT_SENSOR_PIN 36        // Analog inngang for lysmåling
+#define SDA_PIN 21                 // I2C-data
+#define SCL_PIN 22                 // I2C-klokke
+#define WIND_SENSOR_PIN 4          // Digital inngang for Hall-effektsensor
 
-// Dvale
+#define SEALEVELPRESSURE_HPA (1013.25)     // Referanse for høydeberegning
+#define ROTOR_RADIUS 0.12                  // Radius på vindrotor i meter
+#define CALIBRATION_FACTOR_WIND 2          // Kalibreringsfaktor for vindhastighet
+#define MAX_LENGTH 20                      // Maks antall vindpulser i kø
+
+// === Dvale-innstillinger ===
 #define uS_TO_S_FACTOR 1000000ULL
-#define TIME_TO_SLEEP 300  // Hvert 5. minutt
+#define TIME_TO_SLEEP 300          // 5 minutter i dvale mellom målinger
 
-// Sensorer
-Adafruit_BME280 bme;
+// === Sensorobjekter ===
+Adafruit_BME280 bme;               // Temperatur, trykk og fuktighetssensor
 
 
 
@@ -30,34 +33,20 @@ void setup() {
   Serial.begin(9600);
   delay(1000);
 
-  // I2C + BME280
+  // === Initialiserer I2C og BME280 ===
   Wire.begin(SDA_PIN, SCL_PIN);
   if (!bme.begin(0x76, &Wire)) {
     Serial.println("Fant ikke BME280!");
-    while (1);
-  }
-
-  // Lys
-  pinMode(LIGHT_SENSOR_PIN, INPUT);
-
-  // WiFi
-  WiFi.begin(ssid, password);
-  Serial.print("Kobler til WiFi");
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\nWiFi-feil, går i dvale");
     sleepNow();
   }
 
-  Serial.println("\nWiFi tilkoblet!");
+  // === Initialiserer lysmåling ===
+  pinMode(LIGHT_SENSOR_PIN, INPUT);
 
-  // Mål sensordata
+  // === Kobler til WiFi ===
+  connectToWiFi();
+
+  // === Måler sensordata ===
   float temp = bme.readTemperature();
   float humid = bme.readHumidity();
   float pressure = bme.readPressure() / 100.0F;
@@ -66,6 +55,7 @@ void setup() {
   float windFreq = measureWind();
   float windSpeed = getWindSpeed(windFreq);
 
+  // === Debug print til serieport ===
   Serial.println("Sender til backend:");
   Serial.printf("Temp: %.1f C\n", temp);
   Serial.printf("Fukt: %.1f %%\n", humid);
@@ -75,16 +65,18 @@ void setup() {
   Serial.printf("Vindfrekvens: %.2f Hz\n", windFreq);
   Serial.printf("Vindhastighet: %.2f m/s\n", windSpeed);
 
-  // Send til backend
+  // === Send data til backend ===
   sendToBackend(temp, location, humid, pressure, light, battery_voltage, windFreq, windSpeed);
 
-  // Deep sleep
+  // === Sett mikrokontroller i deep sleep ===
   sleepNow();
 }
 
-void loop() {} // Ikke i bruk – kreves av Arduino
+void loop() {
+  // Ikke i bruk – programmet kjører kun én gang per oppvåkning, men funksjonen kreves av Arduino
+}
 
-// Batterimåling
+// === FUNKSJON FOR Å MÅLE BATTERISPENNING ===
 float readBatteryVoltage() {
   pinMode(BATTERY_GND_CTRL_PIN, OUTPUT);
   digitalWrite(BATTERY_GND_CTRL_PIN, LOW); // Slå på "jord" for spenningsdeler
@@ -98,10 +90,12 @@ float readBatteryVoltage() {
   rawADC /= 10;
   digitalWrite(BATTERY_GND_CTRL_PIN, INPUT); // Koble fra for å spare strøm
 
-  float battery_voltage = (rawADC / 4095.0) * 3.3 * 2 * 1.134; // ADC → Volt (x2 pga. spenningsdeler) (1,134 er en korreksjonsfaktor lagt inn basert på faktiske målinger.)
+  // Konverter til volt (faktor 2 pga. spenningsdeler, 1.134 er kalibreringsfaktor basert på målinger)
+  float battery_voltage = (rawADC / 4095.0) * 3.3 * 2 * 1.134;
   return battery_voltage;
 }
 
+// === FUNKSJON FOR Å MÅLE VINDFREKVENS OVER 10 SEKUNDER ===
 float measureWind() {
   const unsigned long duration_ms = 10000; // måletid: 10 sekunder
   unsigned long startTime = millis();
@@ -149,13 +143,14 @@ float measureWind() {
   return windFreq;
 }
 
+// === FUNKSJON FOR Å BEREGNE VINDHASTIGHET I M/S ===
 float getWindSpeed(float freqHz) {
   float circumference = 2 * PI * ROTOR_RADIUS;
   float tip_speed = freqHz * circumference;
   return CALIBRATION_FACTOR_WIND * tip_speed;
 }
 
-
+// === FUNKSJON FOR Å SENDE DATA TIL BACKEND ===
 void sendToBackend(float temp, const char* location, float humid, float pressure, int light, float battery_voltage, float windFreq, float windSpeed) {
   HTTPClient http;
   http.begin(serverUrl);
@@ -188,6 +183,26 @@ void sendToBackend(float temp, const char* location, float humid, float pressure
   http.end();
 }
 
+// === FUNKSJON FOR Å KOBLE TIL WIFI ===
+void connectToWiFi() {
+  WiFi.begin(ssid, password);
+  Serial.print("Kobler til WiFi");
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nWiFi-feil, går i dvale");
+    sleepNow();
+  }
+
+  Serial.println("\nWiFi tilkoblet!");
+}
+
+// === FUNKSJON FOR Å STARTE DEEP SLEEP ===
 void sleepNow() {
   Serial.println("Går i dvale...");
   Serial.flush();
